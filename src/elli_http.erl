@@ -9,7 +9,7 @@
 
 
 %% API
--export([start_link/4]).
+-export([start_link/5]).
 
 -export([send_response/4]).
 
@@ -39,14 +39,15 @@
 %% TODO: use this
 %% -type connection_token() :: keep_alive | close.
 
--spec start_link(Server, ListenSocket, Options, Callback) -> pid() when
+-spec start_link(Server, ListenSocket, Options, Callback, SpawnOpts) -> pid() when
       Server       :: pid(),
       ListenSocket :: elli_tcp:socket(),
       Options      :: proplists:proplist(),
-      Callback     :: elli_handler:callback().
-start_link(Server, ListenSocket, Options, Callback) ->
-    proc_lib:spawn_link(?MODULE, accept,
-                        [Server, ListenSocket, Options, Callback]).
+      Callback     :: elli_handler:callback(),
+      SpawnOpts    :: proplists:proplist().
+start_link(Server, ListenSocket, Options, Callback, SpawnOpts) ->
+    proc_lib:spawn_opt(?MODULE, accept,
+                        [Server, ListenSocket, Options, Callback], [link | SpawnOpts]).
 
 %% @doc Accept on the socket until a client connects.
 %% Handle the request, then loop if we're using keep alive or chunked transfer.
@@ -708,7 +709,6 @@ is_header_defined(Key, Headers) ->
 get_header(Key, Headers) ->
     get_header(Key, Headers, undefined).
 
--ifdef(OTP_RELEASE).
 get_header(Key, Headers, Default) ->
     CaseFoldedKey = string:casefold(Key),
     case lists:search(fun({N, _}) -> string:equal(CaseFoldedKey, N, true) end, Headers) of
@@ -717,68 +717,23 @@ get_header(Key, Headers, Default) ->
         false ->
             Default
     end.
--else.
-get_header(Key, Headers, Default) ->
-    CaseFoldedKey = string:casefold(Key),
-    case search(fun({N, _}) -> string:equal(CaseFoldedKey, N, true) end, Headers) of
-        {value, {_, Value}} ->
-            Value;
-        false ->
-            Default
-    end.
-
-search(Pred, [Hd|Tail]) ->
-    case Pred(Hd) of
-        true -> {value, Hd};
-        false -> search(Pred, Tail)
-    end;
-search(Pred, []) when is_function(Pred, 1) ->
-    false.
--endif.
 
 %%
 %% PATH HELPERS
 %%
 
--ifdef(OTP_RELEASE).
-  -if(?OTP_RELEASE >= 22).
-    parse_path({abs_path, FullPath}) ->
-        URIMap = uri_string:parse(FullPath),
-        Host = maps:get(host, URIMap, undefined),
-        Scheme = maps:get(scheme, URIMap, undefined),
-        Path = maps:get(path, URIMap, <<>>),
-        Query = maps:get(query, URIMap, <<>>),
-        Port = maps:get(port, URIMap, case Scheme of http -> 80; https -> 443; _ -> undefined end),
-        {ok, {Scheme, Host, Port}, {Path, split_path(Path), uri_string:dissect_query(Query)}};
-    parse_path({absoluteURI, Scheme, Host, Port, Path}) ->
-        setelement(2, parse_path({abs_path, Path}), {Scheme, Host, Port});
-    parse_path(_) ->
-        {error, unsupported_uri}.
-  -else.
-    parse_path({abs_path, FullPath}) ->
-        Parsed = case binary:split(FullPath, [<<"?">>]) of
-                     [URL]       -> {FullPath, split_path(URL), []};
-                     [URL, Args] -> {FullPath, split_path(URL), split_args(Args)}
-                 end,
-        {ok, {undefined, undefined, undefined}, Parsed};
-    parse_path({absoluteURI, Scheme, Host, Port, Path}) ->
-        setelement(2, parse_path({abs_path, Path}), {Scheme, Host, Port});
-    parse_path(_) ->
-        {error, unsupported_uri}.
-  -endif.
--else.
-  %% same as else branch above. can drop this when only OTP 21+ is supported
-  parse_path({abs_path, FullPath}) ->
-      Parsed = case binary:split(FullPath, [<<"?">>]) of
-                   [URL]       -> {FullPath, split_path(URL), []};
-                   [URL, Args] -> {FullPath, split_path(URL), split_args(Args)}
-               end,
-      {ok, {undefined, undefined, undefined}, Parsed};
-  parse_path({absoluteURI, Scheme, Host, Port, Path}) ->
-      setelement(2, parse_path({abs_path, Path}), {Scheme, Host, Port});
-  parse_path(_) ->
-      {error, unsupported_uri}.
--endif.
+parse_path({abs_path, FullPath}) ->
+    URIMap = uri_string:parse(FullPath),
+    Host = maps:get(host, URIMap, undefined),
+    Scheme = maps:get(scheme, URIMap, undefined),
+    Path = maps:get(path, URIMap, <<>>),
+    Query = maps:get(query, URIMap, <<>>),
+    Port = maps:get(port, URIMap, case Scheme of http -> 80; https -> 443; _ -> undefined end),
+    {ok, {Scheme, Host, Port}, {Path, split_path(Path), uri_string:dissect_query(Query)}};
+parse_path({absoluteURI, Scheme, Host, Port, Path}) ->
+    setelement(2, parse_path({abs_path, Path}), {Scheme, Host, Port});
+parse_path(_) ->
+    {error, unsupported_uri}.
 
 split_path(Path) ->
     [P || P <- binary:split(Path, [<<"/">>], [global]),
