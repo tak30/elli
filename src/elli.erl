@@ -46,7 +46,8 @@
                 acceptors      :: ets:tid(),
                 open_reqs = 0  :: non_neg_integer(),
                 options   = [] :: [{_, _}],     % TODO: refine
-                callback       :: elli_handler:callback()
+                callback       :: elli_handler:callback(),
+                spawn_opts = [] :: proplists:proplist()
                }).
 %% @type state(). Internal state.
 -opaque state() :: #state{}.
@@ -148,6 +149,8 @@ init([Opts]) ->
                       {body_timeout, BodyTimeout},
                       {max_body_size, MaxBodySize}],
 
+    SpawnOpts = proplists:get_value(spawn_opts, Opts, []),
+
     %% Notify the handler that we are about to start accepting
     %% requests, so it can create necessary supporting processes, ETS
     %% tables, etc.
@@ -164,7 +167,7 @@ init([Opts]) ->
     Acceptors = ets:new(acceptors, [private, set]),
     [begin
          Pid = elli_http:start_link(self(), Socket, Options,
-                                    {Callback, CallbackArgs}),
+                                    {Callback, CallbackArgs}, SpawnOpts),
          ets:insert(Acceptors, {Pid})
      end
      || _ <- lists:seq(1, MinAcceptors)],
@@ -173,7 +176,8 @@ init([Opts]) ->
                 acceptors = Acceptors,
                 open_reqs = 0,
                 options   = Options,
-                callback  = {Callback, CallbackArgs}}}.
+                callback  = {Callback, CallbackArgs},
+                spawn_opts = SpawnOpts}}.
 
 
 %% @hidden
@@ -251,7 +255,7 @@ remove_acceptor(State, Pid) ->
 -spec start_add_acceptor(State0 :: state()) -> State1 :: state().
 start_add_acceptor(State) ->
     Pid = elli_http:start_link(self(), State#state.socket,
-                               State#state.options, State#state.callback),
+                               State#state.options, State#state.callback, State#state.spawn_opts),
     add_acceptor(State, Pid).
 
 -spec add_acceptor(State0 :: state(), Pid :: pid()) -> State1 :: state().

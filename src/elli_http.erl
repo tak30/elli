@@ -9,7 +9,7 @@
 
 
 %% API
--export([start_link/4]).
+-export([start_link/5]).
 
 -export([send_response/4]).
 
@@ -27,14 +27,15 @@
 %% TODO: use this
 %% -type connection_token() :: keep_alive | close.
 
--spec start_link(Server, ListenSocket, Options, Callback) -> pid() when
+-spec start_link(Server, ListenSocket, Options, Callback, SpawnOpts) -> pid() when
       Server       :: pid(),
       ListenSocket :: elli_tcp:socket(),
       Options      :: proplists:proplist(),
-      Callback     :: elli_handler:callback().
-start_link(Server, ListenSocket, Options, Callback) ->
-    proc_lib:spawn_link(?MODULE, accept,
-                        [Server, ListenSocket, Options, Callback]).
+      Callback     :: elli_handler:callback(),
+      SpawnOpts    :: proplists:proplist().
+start_link(Server, ListenSocket, Options, Callback, SpawnOpts) ->
+    proc_lib:spawn_opt(?MODULE, accept,
+                        [Server, ListenSocket, Options, Callback], [link | SpawnOpts]).
 
 %% @doc Accept on the socket until a client connects.
 %% Handle the request, then loop if we're using keep alive or chunked transfer.
